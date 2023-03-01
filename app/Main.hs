@@ -1,62 +1,102 @@
--- A fractal consisting of circles and lines which looks a bit like
---      the workings of a clock.
 module Main where
 
+import Config (AnimationType (..), Config (..), readConfig)
+import Data.Time (midday)
 import qualified Data.Time as Time
 import Graphics.Gloss (
   Display (InWindow),
-  Picture (
-    Circle,
-    Color,
-    Line,
-    Pictures,
-    Scale
-  ),
+  Picture,
   animate,
   black,
   blue,
+  circle,
+  color,
   green,
+  line,
+  pictures,
+  scale,
+  text,
+  translate,
   white,
  )
 import Graphics.Gloss.Data.Color (red)
+import Debug.Trace
+
+data ClockAnimationHandle = ClockAnimationHandle
+  { hours :: Time.TimeOfDay -> Float
+  , minutes :: Time.TimeOfDay -> Float
+  , seconds :: Time.TimeOfDay -> Float
+  }
 
 main :: IO ()
 main = do
-  nowUTC <- Time.getCurrentTime
   tz <- Time.getCurrentTimeZone
+  nowUTC <- Time.getCurrentTime
+  conf <- readConfig
+  -- d <- Time.getCurrentTime
+  -- let nowUTC = Time.localTimeToUTC tz (Time.LocalTime (Time.localDay (Time.utcToLocalTime tz d)) (Time.TimeOfDay 23 59 55))
   let now = Time.utcToLocalTime tz nowUTC
+  let animHandle = case animType conf of
+        Smooth ->
+          ClockAnimationHandle
+            { hours = \t -> fromRational (toRational (fromIntegral ((Time.todHour t `mod` 12) * 3600 + Time.todMin t * 60) + Time.todSec t) / 3600)
+            , minutes = \t -> fromRational (toRational (fromIntegral (Time.todMin t) * 60 + Time.todSec t) / 60)
+            , seconds = fromRational . toRational . Time.todSec
+            }
+        Mixed ->
+          ClockAnimationHandle
+            { hours = fromIntegral . (`mod` 12) . Time.todHour
+            , minutes = fromIntegral . Time.todMin
+            , seconds = fromRational . toRational . Time.todSec
+            }
+        Digital ->
+          ClockAnimationHandle
+            { hours = fromIntegral . (`mod` 12) . Time.todHour
+            , minutes = fromIntegral . Time.todMin
+            , seconds = fromInteger . round . Time.todSec
+            }
   animate
     (InWindow "Clock" (600, 600) (20, 20))
     black
-    (frame now notSmooth)
-
-smooth :: Real a => a -> Time.NominalDiffTime
-smooth = Time.secondsToNominalDiffTime . fromRational . toRational
-
-notSmooth :: RealFrac a => a -> Time.NominalDiffTime
-notSmooth = Time.secondsToNominalDiffTime . fromInteger . round
+    (frame animHandle now)
 
 -- Build the fractal, scale it so it fits in the window
 -- and rotate the whole thing as time moves on.
-frame :: Time.LocalTime -> (Float -> Time.NominalDiffTime) -> Float -> Picture
-frame initial secFunc t =
+frame :: ClockAnimationHandle -> Time.LocalTime -> Float -> Picture
+frame ClockAnimationHandle {hours = h', minutes = m', seconds = s'} initial timeInSec =
   let
-    sec = secFunc $ t
-    newTime = Time.addLocalTime sec initial
+    sec = Time.secondsToNominalDiffTime . fromRational . toRational $ timeInSec
+    t = Time.localTimeOfDay . Time.addLocalTime sec $ initial
+    h = traceShow (h' t) (h' t) / 12 * 2 * pi
+    m = m' t / 60 * 2 * pi
+    s = s' t / 60 * 2 * pi
    in
-    Scale 120 120 $
-      Pictures [Color white $ Circle 2.1, drawArrows (Time.localTimeOfDay newTime)]
+    scale 240 240 $
+      pictures [back, drawArrows h m s, time (Time.todHour t) (Time.todMin t) ((`mod` 60) . floor . Time.todSec $ t)]
 
-drawArrows :: Time.TimeOfDay -> Picture
-drawArrows t = arrows
+time :: Int -> Int -> Int -> Picture
+time h m s = color white . translate (-0.25) (-0.25) . scale 0.001 0.001 . text $ (padLeft '0' 2 . show $ h) ++ ":" ++ (padLeft '0' 2 . show $ m) ++ ":" ++ (padLeft '0' 2 . show $ s)
+
+{-# INLINE padLeft #-}
+padLeft :: a -> Int -> [a] -> [a]
+padLeft c n xs = replicate (n - length xs) c ++ xs
+
+back :: Picture
+back = color white . pictures $ [circle 1, minuteLines, hourLines]
  where
-  h = fromIntegral (Time.todHour t) * (1 / 24) * 2 * pi
-  m = fromIntegral (Time.todMin t) * (1 / 60) * 2 * pi
-  s = fromRational (toRational (Time.todSec t)) * (1 / 60) * 2 * pi
-  -- join each iteration to the origin with some lines.
-  arrows =
-    Pictures
-      [ Color red $ Scale 0.8 0.8 $ Line [(0, 0), (sin h, cos h)]
-      , Color green $ Scale 1.5 1.5 $ Line [(0, 0), (sin m, cos m)]
-      , Color blue $ Scale 2 2 $ Line [(0, 0), (sin s, cos s)]
-      ]
+  minuteLines = pictures [line [(minuteLength * sin h, minuteLength * cos h), (sin h, cos h)] | h <- (\x -> x / 60 * 2 * pi) . pred <$> [1 .. 60]]
+  hourLines = pictures [line [(hourLength * sin h, hourLength * cos h), (sin h, cos h)] | h <- (\x -> x / 12 * 2 * pi) . pred <$> [1 .. 12]]
+
+drawArrows :: Float -> Float -> Float -> Picture
+drawArrows h m s =
+  pictures
+    [ color blue . scale minuteLength minuteLength . line $ [(0, 0), (sin s, cos s)]
+    , color green . scale hourLength hourLength . line $ [(0, 0), (sin m, cos m)]
+    , color red . scale 0.4 0.4 . line $ [(0, 0), (sin h, cos h)]
+    ]
+
+hourLength :: Float
+hourLength = 0.8
+
+minuteLength :: Float
+minuteLength = 0.95
