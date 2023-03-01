@@ -1,7 +1,6 @@
 module Main where
 
 import Config (AnimationType (..), Config (..), readConfig)
-import Data.Time (midday)
 import qualified Data.Time as Time
 import Graphics.Gloss (
   Display (InWindow),
@@ -20,7 +19,6 @@ import Graphics.Gloss (
   white,
  )
 import Graphics.Gloss.Data.Color (red)
-import Debug.Trace
 
 data ClockAnimationHandle = ClockAnimationHandle
   { hours :: Time.TimeOfDay -> Float
@@ -53,7 +51,7 @@ main = do
           ClockAnimationHandle
             { hours = fromIntegral . (`mod` 12) . Time.todHour
             , minutes = fromIntegral . Time.todMin
-            , seconds = fromInteger . round . Time.todSec
+            , seconds = fromInteger . floor . Time.todSec
             }
   animate
     (InWindow "Clock" (600, 600) (20, 20))
@@ -67,7 +65,7 @@ frame ClockAnimationHandle {hours = h', minutes = m', seconds = s'} initial time
   let
     sec = Time.secondsToNominalDiffTime . fromRational . toRational $ timeInSec
     t = Time.localTimeOfDay . Time.addLocalTime sec $ initial
-    h = traceShow (h' t) (h' t) / 12 * 2 * pi
+    h = h' t / 12 * 2 * pi
     m = m' t / 60 * 2 * pi
     s = s' t / 60 * 2 * pi
    in
