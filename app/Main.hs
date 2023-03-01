@@ -31,8 +31,6 @@ main = do
   tz <- Time.getCurrentTimeZone
   nowUTC <- Time.getCurrentTime
   conf <- readConfig
-  -- d <- Time.getCurrentTime
-  -- let nowUTC = Time.localTimeToUTC tz (Time.LocalTime (Time.localDay (Time.utcToLocalTime tz d)) (Time.TimeOfDay 23 59 55))
   let now = Time.utcToLocalTime tz nowUTC
   let animHandle = case animType conf of
         Smooth ->
